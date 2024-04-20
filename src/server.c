@@ -8,10 +8,12 @@
 
 #include "icmp.h"
 
+#define TIME_OFFSET_MS 1000000
+
 char* message;
 size_t message_len = 0;
 
-int encoder_plain() {
+uint64_t encoder_plain() {
     uint16_t data = 0;
     switch (message_len) {
         case 0:
@@ -28,7 +30,36 @@ int encoder_plain() {
     printf("Current message: %c%c\n", data >> 8, data & 0xFF);
     struct timeval* t = (struct timeval*)icmp_packet.payload;
     t->tv_usec = (t->tv_usec - t->tv_usec & 0xFFFF) + data;
-    return 1;
+    return TIME_OFFSET_MS;
+}
+
+int encoder_offset_started = 0;
+struct timeval encoder_offset_tv = {0};
+
+int encoder_offset() {
+    if(message_len == 0) return 0;
+
+    struct timeval* t = (struct timeval*)icmp_packet.payload;
+
+    if(encoder_offset_tv.tv_sec == 0) {
+        printf("Init\n");
+        encoder_offset_tv = *t;
+    } else {
+        *t = encoder_offset_tv;
+    }
+
+    printf("Current letter: %c (%u)\n", message[0], (uint8_t)message[0]);
+
+    encoder_offset_tv.tv_usec += ((uint8_t)message[0]) * 1000;
+    encoder_offset_tv.tv_sec += 1 + encoder_offset_tv.tv_usec / 1000000;
+    encoder_offset_tv.tv_usec = encoder_offset_tv.tv_usec % 1000000;
+
+    printf("\t%lu:%lu -> %lu:%lu\n", t->tv_sec, t->tv_usec, encoder_offset_tv.tv_sec, encoder_offset_tv.tv_usec);
+
+    message++;
+    message_len--;
+
+    return TIME_OFFSET_MS + (uint8_t)message[0] * 1000;
 }
 
 int main(int argc, char* argv[]) {
@@ -69,7 +100,8 @@ int main(int argc, char* argv[]) {
         for(int j = sizeof(struct timeval); j < ICMP_PAYLOAD_SIZE; j++) {
             icmp_packet.payload[j] = j;
         }
-        int result = encoder_plain();
+//        uint64_t result = encoder_plain();
+        uint64_t result = encoder_offset();
         if(!result) {
             break;
         }
@@ -80,7 +112,7 @@ int main(int argc, char* argv[]) {
             perror("sendto");
             break;
         }
-        sleep(result);
+        usleep(result);
     }
 
     close(fd);

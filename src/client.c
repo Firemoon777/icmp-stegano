@@ -18,6 +18,18 @@ void decoder_plain(struct icmp_packet* icmp) {
     fflush(stdout);
 }
 
+struct timeval decoder_offset_tv = {0};
+void decoder_offset(struct icmp_packet* icmp) {
+    struct timeval* t = (struct timeval*)icmp->payload;
+    if(decoder_offset_tv.tv_sec == 0 || decoder_offset_tv.tv_sec + 10 < t->tv_sec) {
+        decoder_offset_tv = *t;
+    } else {
+        uint8_t data = (t->tv_sec - decoder_offset_tv.tv_sec - 1) * 1000 + t->tv_usec / 1000 - decoder_offset_tv.tv_usec / 1000;
+        printf("%c", data);
+        fflush(stdout);
+        decoder_offset_tv = *t;
+    }
+}
 
 int main(int argc, char* argv[]) {
     struct sockaddr_in cliaddr;
@@ -56,7 +68,8 @@ int main(int argc, char* argv[]) {
                 printf("%s: ", inet_ntoa(cliaddr.sin_addr));
             }
 
-            decoder_plain(icmp);
+//            decoder_plain(icmp);
+            decoder_offset(icmp);
         }
     }
 
